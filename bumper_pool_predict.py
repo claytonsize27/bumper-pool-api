@@ -1,7 +1,3 @@
-# --------------------------------------------------------------------------
-# bumper_pool_predict.py — Live Google Sheet + Full Betting Logic
-# --------------------------------------------------------------------------
-
 from datetime import datetime
 import pandas as pd
 from sklearn.compose import ColumnTransformer
@@ -9,7 +5,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
-# ---------------- Helpers ----------------
 def opposite_side(side: str) -> str:
     return "TV Side" if side == "Window Side" else "Window Side"
 
@@ -25,11 +20,8 @@ def apply_vig(p1, p2, total_prob=1.05):
     scale = total_prob / (p1 + p2)
     return p1 * scale, p2 * scale
 
-# ---------------- Data Loader ----------------
 def load_full(url: str) -> pd.DataFrame:
     raw = pd.read_csv(url)
-    
-    # Clean up column headers
     raw.columns = raw.columns.str.strip()
 
     WIN = "Winner First Name (Use actual names for consistency in data collection)"
@@ -38,7 +30,6 @@ def load_full(url: str) -> pd.DataFrame:
     MARGIN = "Balls left on table by loser"
     INEBRIATED = "Players Inebriated?"
 
-    # Convert time columns
     raw["Timestamp"] = pd.to_datetime(raw["Timestamp"], errors="coerce")
     raw["hour_of_day"] = raw["Timestamp"].dt.hour
     raw["day_of_week"] = raw["Timestamp"].dt.day_name()
@@ -46,8 +37,7 @@ def load_full(url: str) -> pd.DataFrame:
     rows = []
     for _, r in raw.iterrows():
         if pd.isna(r[WIN]) or pd.isna(r[LOS]) or pd.isna(r[BREAK]) or pd.isna(r[MARGIN]):
-            continue  # skip incomplete rows
-
+            continue
         winner, loser = r[WIN], r[LOS]
         w_side = r[BREAK]
         l_side = opposite_side(w_side)
@@ -65,20 +55,12 @@ def load_full(url: str) -> pd.DataFrame:
         rows.append({**base, "playerA": loser, "playerB": winner,
                      "break_sideA": l_side, "break_sideB": w_side,
                      "margin": -margin, "y": 0})
-
     return pd.DataFrame(rows)
 
-# ---------------- Model Builder ----------------
 def build_model(df: pd.DataFrame) -> Pipeline:
     X = df.drop(columns=["y", "margin"])
     y = df["y"]
-
     cat_cols = ["playerA", "playerB", "break_sideA", "break_sideB", "inebriated", "day_of_week"]
-    pre = ColumnTransformer(
-        [("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols)],
-        remainder="passthrough"
-    )
-    return Pipeline([
-        ("pre", pre),
-        ("clf", LogisticRegression(max_iter=500))
-    ]).fit(X, y)
+    pre = ColumnTransformer([("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols)],
+                            remainder="passthrough")
+    return Pipeline([("pre", pre), ("clf", LogisticRegression(max_iter=500))]).fit(X, y)

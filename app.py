@@ -8,10 +8,8 @@ from datetime import datetime
 import pandas as pd
 import os
 
-# Initialize app
 app = FastAPI()
 
-# Enable CORS for your GitHub Pages site
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://claytonsize27.github.io"],
@@ -20,12 +18,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load data from Google Sheet
 CSV_URL = os.getenv("CSV_URL") or "https://docs.google.com/spreadsheets/d/e/2PACX-1vRWwh0ivmbEFbGOR3EsIAwWnPhXL9e5Ua6f98WJdkkkNS-Q_BHeIRUM56Y_OtC0DRGrdgAGODmbswnu/pub?gid=115312881&single=true&output=csv"
-
-# Train model once at startup
-df_global = load_full(CSV_URL)
-model_global = build_model(df_global)
+df = load_full(CSV_URL)
+model = build_model(df)
 
 @app.get("/")
 def home():
@@ -51,10 +46,15 @@ def predict(
         "day_of_week": [now.strftime("%A")],
     })
 
-    pA = model_global.predict_proba(row)[0, 1]
+    pA = model.predict_proba(row)[0, 1]
     pB = 1 - pA
     if vig:
         pA, pB = apply_vig(pA, pB)
+
+    sweepA = (df[df["playerA"] == playerA]["margin"] == 5).mean()
+    sweepB = (df[df["playerA"] == playerB]["margin"] == 5).mean()
+    spread = df[df["playerA"] == playerA]["margin"].mean() - df[df["playerA"] == playerB]["margin"].mean()
+    predicted_margin = round(spread, 2)
 
     return {
         "moneyline": {
@@ -64,5 +64,14 @@ def predict(
                 playerA: round(pA, 4),
                 playerB: round(pB, 4)
             }
+        },
+        "sweep_odds": {
+            playerA: fmt_odds(prob_to_american(sweepA)),
+            playerB: fmt_odds(prob_to_american(sweepB)),
+        },
+        "predicted_margin": {
+            "winner": playerA if pA > pB else playerB,
+            "loser": playerB if pA > pB else playerA,
+            "margin": abs(predicted_margin) if pA != pB else 0.0
         }
     }
