@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 from bumper_pool_predict import (
     opposite_side, load_full, build_model,
     apply_vig, prob_to_american, fmt_odds
@@ -7,7 +8,19 @@ from datetime import datetime
 import pandas as pd
 import os
 
+# Initialize app
 app = FastAPI()
+
+# Enable CORS for your GitHub Pages site
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://claytonsize27.github.io"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Load data from Google Sheet
 CSV_URL = os.getenv("CSV_URL") or "https://docs.google.com/spreadsheets/d/e/2PACX-1vRWwh0ivmbEFbGOR3EsIAwWnPhXL9e5Ua6f98WJdkkkNS-Q_BHeIRUM56Y_OtC0DRGrdgAGODmbswnu/pub?gid=115312881&single=true&output=csv"
 
 # Train model once at startup
@@ -16,7 +29,7 @@ model_global = build_model(df_global)
 
 @app.get("/")
 def home():
-    return {"status": "OK", "message": "Bumper Pool API is live"}
+    return {"status": "OK", "message": "Bumper Pool API is live 🎱"}
 
 @app.get("/predict")
 def predict(
