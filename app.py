@@ -19,7 +19,6 @@ logger = logging.getLogger("app")
 # ---------------- App Init ----------------
 app = FastAPI()
 
-# ✅ Allow GitHub Pages access
 origins = ["https://claytonsize27.github.io"]
 
 app.add_middleware(
@@ -30,7 +29,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Global error handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled error: {exc}", exc_info=True)
@@ -45,12 +43,10 @@ async def global_exception_handler(request: Request, exc: Exception):
         },
     )
 
-# ---------------- Load Model ----------------
 CSV_URL = os.getenv("CSV_URL") or "https://docs.google.com/spreadsheets/d/e/2PACX-1vRWwh0ivmbEFbGOR3EsIAwWnPhXL9e5Ua6f98WJdkkkNS-Q_BHeIRUM56Y_OtC0DRGrdgAGODmbswnu/pub?gid=115312881&single=true&output=csv"
 df = load_full(CSV_URL)
 model_clf, model_reg = build_models(df)
 
-# ---------------- Routes ----------------
 @app.get("/")
 def home():
     return {"status": "OK", "message": "Bumper Pool API is live 🎝️"}
@@ -76,7 +72,6 @@ def predict(
         "day_of_week": [now.strftime("%A")],
     })
 
-    # Predict probabilities and margin
     pA = float(model_clf.predict_proba(row)[0, 1])
     pB = 1 - pA
     margin_pred = float(model_reg.predict(row)[0])
@@ -95,7 +90,6 @@ def predict(
     sweepA = float(1 - norm.cdf(5, loc=(margin_pred if playerA == winner else -margin_pred), scale=std_margin))
     sweepB = float(1 - norm.cdf(5, loc=(margin_pred if playerB == winner else -margin_pred), scale=std_margin))
 
-    # Ball-by-ball win margin probabilities (1–5 balls)
     margin_probs = {}
     for i in range(1, 6):
         prob = float(norm.cdf(i + 0.5, loc=signed_margin, scale=std_margin) - norm.cdf(i - 0.5, loc=signed_margin, scale=std_margin))
