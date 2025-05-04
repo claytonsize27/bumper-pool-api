@@ -12,15 +12,16 @@ from bumper_pool_predict import (
     apply_vig, prob_to_american, fmt_odds
 )
 
-# Logging setup
-logging.basicConfig(level=logging.ERROR)
-logger = logging.getLogger(__name__)
+# ---------------- Logging ----------------
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("app")
 
-# Create app instance
+# ---------------- App Init ----------------
 app = FastAPI()
 
-# CORS setup for GitHub Pages
+# ✅ Allow GitHub Pages access
 origins = ["https://claytonsize27.github.io"]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -29,10 +30,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global error handler that includes CORS headers
+# ✅ Global error handler that includes CORS headers
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled error: {exc}")
+    logger.error(f"Unhandled error: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal Server Error"},
@@ -44,11 +45,12 @@ async def global_exception_handler(request: Request, exc: Exception):
         },
     )
 
-# Load Google Sheet data
+# ---------------- Load Model ----------------
 CSV_URL = os.getenv("CSV_URL") or "https://docs.google.com/spreadsheets/d/e/2PACX-1vRWwh0ivmbEFbGOR3EsIAwWnPhXL9e5Ua6f98WJdkkkNS-Q_BHeIRUM56Y_OtC0DRGrdgAGODmbswnu/pub?gid=115312881&single=true&output=csv"
 df = load_full(CSV_URL)
 model_clf, model_reg = build_models(df)
 
+# ---------------- Routes ----------------
 @app.get("/")
 def home():
     return {"status": "OK", "message": "Bumper Pool API is live 🎱"}
@@ -63,6 +65,7 @@ def predict(
 ):
     now = datetime.now()
     breakB = opposite_side(break_side)
+
     row = pd.DataFrame({
         "playerA":     [playerA],
         "playerB":     [playerB],
@@ -73,18 +76,19 @@ def predict(
         "day_of_week": [now.strftime("%A")],
     })
 
-    pA = model_clf.predict_proba(row)[0, 1]
+    pA = float(model_clf.predict_proba(row)[0, 1])
     pB = 1 - pA
-    margin_pred = model_reg.predict(row)[0]
+    margin_pred = float(model_reg.predict(row)[0])  # ✅ Cast to native float
 
     if vig:
         pA, pB = apply_vig(pA, pB)
 
-    mlA, mlB = prob_to_american(pA), prob_to_american(pB)
+    mlA = fmt_odds(prob_to_american(pA))
+    mlB = fmt_odds(prob_to_american(pB))
 
-    std_margin = df["margin"].std()
-    sweepA = 1 - norm.cdf(5, loc=margin_pred, scale=std_margin)
-    sweepB = 1 - norm.cdf(5, loc=-margin_pred, scale=std_margin)
+    std_margin = float(df["margin"].std())
+    sweepA = float(1 - norm.cdf(5, loc=margin_pred, scale=std_margin))  # ✅ Cast
+    sweepB = float(1 - norm.cdf(5, loc=-margin_pred, scale=std_margin))  # ✅ Cast
 
     return {
         "moneyline": {
@@ -97,7 +101,7 @@ def predict(
         },
         "sweep_odds": {
             playerA: fmt_odds(prob_to_american(sweepA)),
-            playerB: fmt_odds(prob_to_american(sweepB)),
+            playerB: fmt_odds(prob_to_american(sweepB))
         },
         "predicted_margin": {
             "winner": playerA if pA > pB else playerB,
