@@ -1,32 +1,55 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
-import os
-import pandas as pd
+from fastapi.responses import JSONResponse
 from datetime import datetime
 from scipy.stats import norm
+import pandas as pd
+import os
 
 from bumper_pool_predict import (
     load_full, build_models, opposite_side,
     apply_vig, prob_to_american, fmt_odds
 )
 
-# Create app FIRST
+# ---------------- Init App ----------------
 app = FastAPI()
 
-# ✅ CORSMiddleware must be added immediately after app creation
+# Allowed frontend origin
+origins = ["https://claytonsize27.github.io"]
+
+# Built-in CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://claytonsize27.github.io"],  # must be exact
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ Load data and models
+# ✅ Custom middleware to ensure CORS headers apply even on 500 errors
+@app.middleware("http")
+async def add_cors_headers(request: Request, call_next):
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        print(f"Unhandled error: {e}")
+        response = JSONResponse(
+            status_code=500,
+            content={"detail": "Internal Server Error"}
+        )
+    # Always add CORS headers
+    response.headers["Access-Control-Allow-Origin"] = origins[0]
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Methods"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
+
+# ---------------- Load Models ----------------
 CSV_URL = os.getenv("CSV_URL") or "https://docs.google.com/spreadsheets/d/e/2PACX-1vRWwh0ivmbEFbGOR3EsIAwWnPhXL9e5Ua6f98WJdkkkNS-Q_BHeIRUM56Y_OtC0DRGrdgAGODmbswnu/pub?gid=115312881&single=true&output=csv"
 df = load_full(CSV_URL)
 model_clf, model_reg = build_models(df)
 
+# ---------------- Routes ----------------
 @app.get("/")
 def home():
     return {"status": "OK", "message": "Bumper Pool API is live 🎱"}
@@ -51,6 +74,7 @@ def predict(
         "day_of_week": [now.strftime("%A")],
     })
 
+    # Predict outcomes
     pA = model_clf.predict_proba(row)[0, 1]
     pB = 1 - pA
     margin_pred = model_reg.predict(row)[0]
