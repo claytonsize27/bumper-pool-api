@@ -30,7 +30,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Global error handler that includes CORS headers
+# ✅ Global error handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled error: {exc}", exc_info=True)
@@ -53,7 +53,7 @@ model_clf, model_reg = build_models(df)
 # ---------------- Routes ----------------
 @app.get("/")
 def home():
-    return {"status": "OK", "message": "Bumper Pool API is live 🎱"}
+    return {"status": "OK", "message": "Bumper Pool API is live 🎝️"}
 
 @app.get("/predict")
 def predict(
@@ -81,23 +81,29 @@ def predict(
     pB = 1 - pA
     margin_pred = float(model_reg.predict(row)[0])
 
-    # Identify predicted winner and signed margin
     winner = playerA if pA > pB else playerB
     loser = playerB if pA > pB else playerA
     signed_margin = margin_pred if winner == playerA else -margin_pred
 
-    # Apply vig if selected
     if vig:
         pA, pB = apply_vig(pA, pB)
 
-    # Format moneyline
     mlA = fmt_odds(prob_to_american(pA))
     mlB = fmt_odds(prob_to_american(pB))
 
-    # Sweep odds using directional margin
     std_margin = float(df["margin"].std())
     sweepA = float(1 - norm.cdf(5, loc=(margin_pred if playerA == winner else -margin_pred), scale=std_margin))
     sweepB = float(1 - norm.cdf(5, loc=(margin_pred if playerB == winner else -margin_pred), scale=std_margin))
+
+    # Ball-by-ball win margin probabilities (1–5 balls)
+    margin_probs = {}
+    for i in range(1, 6):
+        prob = float(norm.cdf(i + 0.5, loc=signed_margin, scale=std_margin) - norm.cdf(i - 0.5, loc=signed_margin, scale=std_margin))
+        odds = fmt_odds(prob_to_american(prob))
+        margin_probs[str(i)] = {
+            "probability": round(prob, 4),
+            "odds": odds
+        }
 
     return {
         "moneyline": {
@@ -116,5 +122,6 @@ def predict(
             "winner": winner,
             "loser": loser,
             "margin": round(abs(signed_margin), 2)
-        }
+        },
+        "margin_distribution": margin_probs
     }
