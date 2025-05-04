@@ -76,19 +76,28 @@ def predict(
         "day_of_week": [now.strftime("%A")],
     })
 
+    # Predict probabilities and margin
     pA = float(model_clf.predict_proba(row)[0, 1])
     pB = 1 - pA
-    margin_pred = float(model_reg.predict(row)[0])  # ✅ Cast to native float
+    margin_pred = float(model_reg.predict(row)[0])
 
+    # Identify predicted winner and signed margin
+    winner = playerA if pA > pB else playerB
+    loser = playerB if pA > pB else playerA
+    signed_margin = margin_pred if winner == playerA else -margin_pred
+
+    # Apply vig if selected
     if vig:
         pA, pB = apply_vig(pA, pB)
 
+    # Format moneyline
     mlA = fmt_odds(prob_to_american(pA))
     mlB = fmt_odds(prob_to_american(pB))
 
+    # Sweep odds using directional margin
     std_margin = float(df["margin"].std())
-    sweepA = float(1 - norm.cdf(5, loc=margin_pred, scale=std_margin))  # ✅ Cast
-    sweepB = float(1 - norm.cdf(5, loc=-margin_pred, scale=std_margin))  # ✅ Cast
+    sweepA = float(1 - norm.cdf(5, loc=(margin_pred if playerA == winner else -margin_pred), scale=std_margin))
+    sweepB = float(1 - norm.cdf(5, loc=(margin_pred if playerB == winner else -margin_pred), scale=std_margin))
 
     return {
         "moneyline": {
@@ -104,8 +113,8 @@ def predict(
             playerB: fmt_odds(prob_to_american(sweepB))
         },
         "predicted_margin": {
-            "winner": playerA if pA > pB else playerB,
-            "loser": playerB if pA > pB else playerA,
-            "margin": round(abs(margin_pred), 2)
+            "winner": winner,
+            "loser": loser,
+            "margin": round(abs(signed_margin), 2)
         }
     }
