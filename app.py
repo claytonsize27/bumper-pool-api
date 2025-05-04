@@ -1,12 +1,13 @@
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from bumper_pool_predict import (
-    opposite_side, load_full, build_model,
+    opposite_side, load_full, build_models,
     apply_vig, prob_to_american, fmt_odds
 )
 from datetime import datetime
 import pandas as pd
 import os
+from scipy.stats import norm
 
 app = FastAPI()
 
@@ -19,8 +20,9 @@ app.add_middleware(
 )
 
 CSV_URL = os.getenv("CSV_URL") or "https://docs.google.com/spreadsheets/d/e/2PACX-1vRWwh0ivmbEFbGOR3EsIAwWnPhXL9e5Ua6f98WJdkkkNS-Q_BHeIRUM56Y_OtC0DRGrdgAGODmbswnu/pub?gid=115312881&single=true&output=csv"
+
 df = load_full(CSV_URL)
-model = build_model(df)
+model_clf, model_reg = build_models(df)
 
 @app.get("/")
 def home():
@@ -46,32 +48,38 @@ def predict(
         "day_of_week": [now.strftime("%A")],
     })
 
-    pA = model.predict_proba(row)[0, 1]
+    pA = model_clf.predict_proba(row)[0, 1]
     pB = 1 - pA
+    margin_pred = model_reg.predict(row)[0]
+
     if vig:
         pA, pB = apply_vig(pA, pB)
 
-    sweepA = (df[df["playerA"] == playerA]["margin"] == 5).mean()
-    sweepB = (df[df["playerA"] == playerB]["margin"] == 5).mean()
-    spread = df[df["playerA"] == playerA]["margin"].mean() - df[df["playerA"] == playerB]["margin"].mean()
-    predicted_margin = round(spread, 2)
+    mlA, mlB = prob_to_american(pA), prob_to_american(pB)
+
+    # Estimate sweep odds as Pr(predicted margin >= 5), assuming ~N(µ, σ²)
+    std_margin = df["margin"].std()
+    sweepA_prob = 1 - norm.cdf(5, loc=margin_pred, scale=std_margin)
+    sweepB_prob = 1 - norm.cdf(5, loc=-margin_pred, scale=std_margin)
+    sweepA_odds = fmt_odds(prob_to_american(sweepA_prob))
+    sweepB_odds = fmt_odds(prob_to_american(sweepB_prob))
 
     return {
         "moneyline": {
-            playerA: fmt_odds(prob_to_american(pA)),
-            playerB: fmt_odds(prob_to_american(pB)),
+            playerA: mlA,
+            playerB: mlB,
             "probabilities": {
                 playerA: round(pA, 4),
                 playerB: round(pB, 4)
             }
         },
         "sweep_odds": {
-            playerA: fmt_odds(prob_to_american(sweepA)),
-            playerB: fmt_odds(prob_to_american(sweepB)),
+            playerA: sweepA_odds,
+            playerB: sweepB_odds
         },
         "predicted_margin": {
             "winner": playerA if pA > pB else playerB,
             "loser": playerB if pA > pB else playerA,
-            "margin": abs(predicted_margin) if pA != pB else 0.0
+            "margin": round(abs(margin_pred), 2)
         }
     }

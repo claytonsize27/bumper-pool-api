@@ -1,7 +1,7 @@
 from datetime import datetime
 import pandas as pd
 from sklearn.compose import ColumnTransformer
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, LinearRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
@@ -57,10 +57,17 @@ def load_full(url: str) -> pd.DataFrame:
                      "margin": -margin, "y": 0})
     return pd.DataFrame(rows)
 
-def build_model(df: pd.DataFrame) -> Pipeline:
-    X = df.drop(columns=["y", "margin"])
-    y = df["y"]
+def build_models(df: pd.DataFrame):
     cat_cols = ["playerA", "playerB", "break_sideA", "break_sideB", "inebriated", "day_of_week"]
     pre = ColumnTransformer([("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols)],
                             remainder="passthrough")
-    return Pipeline([("pre", pre), ("clf", LogisticRegression(max_iter=500))]).fit(X, y)
+
+    X_class = df.drop(columns=["y", "margin"])
+    y_class = df["y"]
+    X_reg = df.drop(columns=["y"])
+    y_reg = df["margin"]
+
+    clf = Pipeline([("pre", pre), ("clf", LogisticRegression(max_iter=500))]).fit(X_class, y_class)
+    reg = Pipeline([("pre", pre), ("reg", LinearRegression())]).fit(X_reg, y_reg)
+
+    return clf, reg
