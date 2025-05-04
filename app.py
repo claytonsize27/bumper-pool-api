@@ -11,16 +11,17 @@ from scipy.stats import norm
 
 app = FastAPI()
 
+# ✅ Allow frontend hosted on GitHub Pages
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://claytonsize27.github.io"],
+    allow_origins=["https://claytonsize27.github.io"],  # 👈 must match exactly
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Load CSV and models at startup
 CSV_URL = os.getenv("CSV_URL") or "https://docs.google.com/spreadsheets/d/e/2PACX-1vRWwh0ivmbEFbGOR3EsIAwWnPhXL9e5Ua6f98WJdkkkNS-Q_BHeIRUM56Y_OtC0DRGrdgAGODmbswnu/pub?gid=115312881&single=true&output=csv"
-
 df = load_full(CSV_URL)
 model_clf, model_reg = build_models(df)
 
@@ -48,6 +49,7 @@ def predict(
         "day_of_week": [now.strftime("%A")],
     })
 
+    # Predict win probability and margin
     pA = model_clf.predict_proba(row)[0, 1]
     pB = 1 - pA
     margin_pred = model_reg.predict(row)[0]
@@ -57,7 +59,7 @@ def predict(
 
     mlA, mlB = prob_to_american(pA), prob_to_american(pB)
 
-    # Estimate sweep odds as Pr(predicted margin >= 5), assuming ~N(µ, σ²)
+    # Sweep odds via normal curve assumption
     std_margin = df["margin"].std()
     sweepA_prob = 1 - norm.cdf(5, loc=margin_pred, scale=std_margin)
     sweepB_prob = 1 - norm.cdf(5, loc=-margin_pred, scale=std_margin)
