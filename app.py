@@ -1,26 +1,28 @@
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from bumper_pool_predict import (
-    opposite_side, load_full, build_models,
-    apply_vig, prob_to_american, fmt_odds
-)
-from datetime import datetime
-import pandas as pd
 import os
+import pandas as pd
+from datetime import datetime
 from scipy.stats import norm
 
+from bumper_pool_predict import (
+    load_full, build_models, opposite_side,
+    apply_vig, prob_to_american, fmt_odds
+)
+
+# Create app FIRST
 app = FastAPI()
 
-# ✅ Allow frontend hosted on GitHub Pages
+# ✅ CORSMiddleware must be added immediately after app creation
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://claytonsize27.github.io"],  # 👈 must match exactly
+    allow_origins=["https://claytonsize27.github.io"],  # must be exact
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Load CSV and models at startup
+# ✅ Load data and models
 CSV_URL = os.getenv("CSV_URL") or "https://docs.google.com/spreadsheets/d/e/2PACX-1vRWwh0ivmbEFbGOR3EsIAwWnPhXL9e5Ua6f98WJdkkkNS-Q_BHeIRUM56Y_OtC0DRGrdgAGODmbswnu/pub?gid=115312881&single=true&output=csv"
 df = load_full(CSV_URL)
 model_clf, model_reg = build_models(df)
@@ -49,7 +51,6 @@ def predict(
         "day_of_week": [now.strftime("%A")],
     })
 
-    # Predict win probability and margin
     pA = model_clf.predict_proba(row)[0, 1]
     pB = 1 - pA
     margin_pred = model_reg.predict(row)[0]
@@ -59,7 +60,6 @@ def predict(
 
     mlA, mlB = prob_to_american(pA), prob_to_american(pB)
 
-    # Sweep odds via normal curve assumption
     std_margin = df["margin"].std()
     sweepA_prob = 1 - norm.cdf(5, loc=margin_pred, scale=std_margin)
     sweepB_prob = 1 - norm.cdf(5, loc=-margin_pred, scale=std_margin)
