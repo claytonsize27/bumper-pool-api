@@ -5,19 +5,22 @@ from datetime import datetime
 from scipy.stats import norm
 import pandas as pd
 import os
+import logging
 
 from bumper_pool_predict import (
     load_full, build_models, opposite_side,
     apply_vig, prob_to_american, fmt_odds
 )
 
-# ---------------- Init App ----------------
+# Logging setup
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
+
+# Create app instance
 app = FastAPI()
 
-# Allowed frontend origin
+# CORS setup for GitHub Pages
 origins = ["https://claytonsize27.github.io"]
-
-# Built-in CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -26,30 +29,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Custom middleware to ensure CORS headers apply even on 500 errors
-@app.middleware("http")
-async def add_cors_headers(request: Request, call_next):
-    try:
-        response = await call_next(request)
-    except Exception as e:
-        print(f"Unhandled error: {e}")
-        response = JSONResponse(
-            status_code=500,
-            content={"detail": "Internal Server Error"}
-        )
-    # Always add CORS headers
-    response.headers["Access-Control-Allow-Origin"] = origins[0]
-    response.headers["Access-Control-Allow-Credentials"] = "true"
-    response.headers["Access-Control-Allow-Methods"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    return response
+# Global error handler that includes CORS headers
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled error: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error"},
+        headers={
+            "Access-Control-Allow-Origin": origins[0],
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+        },
+    )
 
-# ---------------- Load Models ----------------
+# Load Google Sheet data
 CSV_URL = os.getenv("CSV_URL") or "https://docs.google.com/spreadsheets/d/e/2PACX-1vRWwh0ivmbEFbGOR3EsIAwWnPhXL9e5Ua6f98WJdkkkNS-Q_BHeIRUM56Y_OtC0DRGrdgAGODmbswnu/pub?gid=115312881&single=true&output=csv"
 df = load_full(CSV_URL)
 model_clf, model_reg = build_models(df)
 
-# ---------------- Routes ----------------
 @app.get("/")
 def home():
     return {"status": "OK", "message": "Bumper Pool API is live 🎱"}
@@ -58,8 +57,8 @@ def home():
 def predict(
     playerA: str = Query(...),
     playerB: str = Query(...),
-    break_side: str = Query(..., enum=["Window Side", "TV Side"]),
-    inebriated: str = Query("Yes", enum=["Yes", "No"]),
+    break_side: str = Query(...),
+    inebriated: str = Query("Yes"),
     vig: bool = False
 ):
     now = datetime.now()
@@ -74,7 +73,6 @@ def predict(
         "day_of_week": [now.strftime("%A")],
     })
 
-    # Predict outcomes
     pA = model_clf.predict_proba(row)[0, 1]
     pB = 1 - pA
     margin_pred = model_reg.predict(row)[0]
@@ -85,10 +83,8 @@ def predict(
     mlA, mlB = prob_to_american(pA), prob_to_american(pB)
 
     std_margin = df["margin"].std()
-    sweepA_prob = 1 - norm.cdf(5, loc=margin_pred, scale=std_margin)
-    sweepB_prob = 1 - norm.cdf(5, loc=-margin_pred, scale=std_margin)
-    sweepA_odds = fmt_odds(prob_to_american(sweepA_prob))
-    sweepB_odds = fmt_odds(prob_to_american(sweepB_prob))
+    sweepA = 1 - norm.cdf(5, loc=margin_pred, scale=std_margin)
+    sweepB = 1 - norm.cdf(5, loc=-margin_pred, scale=std_margin)
 
     return {
         "moneyline": {
@@ -100,8 +96,8 @@ def predict(
             }
         },
         "sweep_odds": {
-            playerA: sweepA_odds,
-            playerB: sweepB_odds
+            playerA: fmt_odds(prob_to_american(sweepA)),
+            playerB: fmt_odds(prob_to_american(sweepB)),
         },
         "predicted_margin": {
             "winner": playerA if pA > pB else playerB,
