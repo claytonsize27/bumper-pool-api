@@ -92,11 +92,17 @@ def predict(
 
     margin_probs = {}
     for i in range(1, 6):
-        prob = float(norm.cdf(i + 0.5, loc=signed_margin, scale=std_margin) - norm.cdf(i - 0.5, loc=signed_margin, scale=std_margin))
-        odds = fmt_odds(prob_to_american(prob))
+        prob_winner = float(norm.cdf(i + 0.5, loc=signed_margin, scale=std_margin) - norm.cdf(i - 0.5, loc=signed_margin, scale=std_margin))
+        odds_winner = fmt_odds(prob_to_american(prob_winner))
+
+        prob_loser = float(norm.cdf(-i + 0.5, loc=signed_margin, scale=std_margin) - norm.cdf(-i - 0.5, loc=signed_margin, scale=std_margin))
+        odds_loser = fmt_odds(prob_to_american(prob_loser))
+
         margin_probs[str(i)] = {
-            "probability": round(prob, 4),
-            "odds": odds
+            f"{winner}_probability": round(prob_winner, 4),
+            f"{winner}_odds": odds_winner,
+            f"{loser}_probability": round(prob_loser, 4),
+            f"{loser}_odds": odds_loser
         }
 
     return {
